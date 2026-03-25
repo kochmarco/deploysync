@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+src/renderer/dist/
+.DS_Store
+*.log
+.env
+.claude/
+LARAVELSYNC-CONTEXT.md
+CLAUDE.md

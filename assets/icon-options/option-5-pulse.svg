@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#08080f"/>
+      <stop offset="100%" style="stop-color:#0e0e1c"/>
+    </linearGradient>
+    <linearGradient id="pulse5" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#6ecb63"/>
+      <stop offset="50%" style="stop-color:#7ec8e3"/>
+      <stop offset="100%" style="stop-color:#d4a574"/>
+    </linearGradient>
+    <linearGradient id="box5" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7ec8e3"/>
+      <stop offset="100%" style="stop-color:#5aa0b8"/>
+    </linearGradient>
+    <filter id="glow5">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="glow5big">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="108" fill="url(#bg5)"/>
+  <!-- Heartbeat / pulse line -->
+  <g filter="url(#glow5big)">
+    <polyline
+      points="60,290 140,290 170,290 195,290 215,200 240,380 265,170 290,340 315,250 335,290 370,290 450,290"
+      fill="none" stroke="url(#pulse5)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  </g>
+  <g filter="url(#glow5)">
+    <polyline
+      points="60,290 140,290 170,290 195,290 215,200 240,380 265,170 290,340 315,250 335,290 370,290 450,290"
+      fill="none" stroke="url(#pulse5)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- Package box in center - 3D isometric -->
+  <g transform="translate(256, 230)" filter="url(#glow5)">
+    <!-- Top face -->
+    <polygon points="0,-55 60,-25 0,5 -60,-25" fill="#6ecb63" opacity="0.85"/>
+    <!-- Left face -->
+    <polygon points="-60,-25 0,5 0,65 -60,35" fill="#4aaf40" opacity="0.85"/>
+    <!-- Right face -->
+    <polygon points="60,-25 0,5 0,65 60,35" fill="#3a9e30" opacity="0.85"/>
+    <!-- Arrow on top face -->
+    <line x1="0" y1="-15" x2="0" y2="-45" stroke="#0a0a1a" stroke-width="4" stroke-linecap="round"/>
+    <path d="M-10,-35 L0,-48 L10,-35" stroke="#0a0a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <!-- Box edges -->
+    <polygon points="0,-55 60,-25 0,5 -60,-25" fill="none" stroke="#6ecb63" stroke-width="1.5" opacity="0.5"/>
+  </g>
+  <!-- Scan line effect -->
+  <g opacity="0.08">
+    <line x1="40" y1="140" x2="472" y2="140" stroke="#7ec8e3" stroke-width="1"/>
+    <line x1="40" y1="180" x2="472" y2="180" stroke="#7ec8e3" stroke-width="1"/>
+    <line x1="40" y1="350" x2="472" y2="350" stroke="#7ec8e3" stroke-width="1"/>
+    <line x1="40" y1="390" x2="472" y2="390" stroke="#7ec8e3" stroke-width="1"/>
+  </g>
+  <!-- Corner brackets -->
+  <g stroke="#7ec8e3" stroke-width="2.5" opacity="0.35">
+    <!-- Top-left -->
+    <path d="M80,120 L80,100 L100,100" fill="none"/>
+    <!-- Top-right -->
+    <path d="M432,120 L432,100 L412,100" fill="none"/>
+    <!-- Bottom-left -->
+    <path d="M80,400 L80,420 L100,420" fill="none"/>
+    <!-- Bottom-right -->
+    <path d="M432,400 L432,420 L412,420" fill="none"/>
+  </g>
+</svg>

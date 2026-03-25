@@ -1,0 +1,50 @@
+{
+  "name": "deploysync",
+  "version": "1.0.0",
+  "description": "Deploy assistant — file watcher + SFTP upload for any project",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:renderer": "vite --config vite.config.js",
+    "build": "vite build --config vite.config.js && electron-builder",
+    "build:mac": "vite build --config vite.config.js && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.deploysync.app",
+    "productName": "DeploySync",
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools"
+    },
+    "files": [
+      "src/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "cors": "^2.8.6",
+    "electron-store": "^8.2.0",
+    "express": "^5.2.1",
+    "ssh2-sftp-client": "^10.0.3",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.0.0",
+    "wait-on": "^8.0.1",
+    "zustand": "^5.0.2"
+  }
+}
