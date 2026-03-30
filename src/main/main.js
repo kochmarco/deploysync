@@ -69,15 +69,37 @@ function startMCPServer() {
   mcpServer = new MCPServer(port);
 
   mcpServer.on("file-notify", (data) => {
-    // Only update the source of an existing file in the renderer list.
-    // The watcher already added the file — we just re-attribute it.
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("file:source-update", {
-        filePath: data.filePath,
-        source: data.agent || "mcp-agent",
-        description: data.description || null,
-      });
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    const projects = config.get("projects", []);
+    const activeId = config.get("activeProject", null);
+    const project = projects.find((p) => p.id === activeId);
+
+    const relativePath = data.filePath;
+    const absolutePath = project
+      ? path.join(project.localPath, relativePath)
+      : null;
+
+    let fileSize = null;
+    if (absolutePath) {
+      try {
+        fileSize = fs.statSync(absolutePath).size;
+      } catch (_) {
+        // File may not exist yet or was deleted — size stays null
+      }
     }
+
+    // Send as file:changed so addChangedFile upserts the entry whether or
+    // not the watcher has already seen it.
+    mainWindow.webContents.send("file:changed", {
+      relativePath,
+      absolutePath,
+      eventType: data.changeType || "modified",
+      source: data.agent || "mcp-agent",
+      timestamp: Date.now(),
+      fileSize,
+      description: data.description || null,
+    });
   });
 
   mcpServer.on("agent-connected", (name) => {

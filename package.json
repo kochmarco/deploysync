@@ -13,11 +13,13 @@
   "build": {
     "appId": "com.deploysync.app",
     "productName": "DeploySync",
+    "icon": "assets/icons/icon.icns",
     "directories": {
       "output": "release"
     },
     "mac": {
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icons/icon.icns"
     },
     "files": [
       "src/**/*",
