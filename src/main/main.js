@@ -11,7 +11,38 @@ let mainWindow;
 let watcher;
 let mcpServer;
 let sftp = null;
+let sftpConfig = null;
 const config = new ConfigStore();
+
+const CONCURRENT_UPLOADS = 3;
+
+async function ensureConnected() {
+  if (sftp && sftp.connected) return true;
+  if (!sftpConfig) return false;
+  try {
+    if (sftp) await sftp.disconnect().catch(() => {});
+    sftp = new SftpManager();
+    await sftp.connect(sftpConfig);
+    return true;
+  } catch {
+    sftp = null;
+    return false;
+  }
+}
+
+async function runWithConcurrency(tasks, concurrency) {
+  const results = new Array(tasks.length);
+  let index = 0;
+  async function worker() {
+    while (index < tasks.length) {
+      const i = index++;
+      results[i] = await tasks[i]();
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -300,14 +331,16 @@ ipcMain.handle("history:rollback", async (_, entry) => {
 });
 
 // ─── SFTP ───────────────────────────────────────────────────────
-ipcMain.handle("sftp:connect", async (_, sftpConfig) => {
+ipcMain.handle("sftp:connect", async (_, cfg) => {
   try {
     if (sftp) await sftp.disconnect().catch(() => {});
     sftp = new SftpManager();
-    await sftp.connect(sftpConfig);
+    await sftp.connect(cfg);
+    sftpConfig = cfg;
     return { success: true };
   } catch (err) {
     sftp = null;
+    sftpConfig = null;
     return { success: false, error: err.message };
   }
 });
@@ -317,6 +350,7 @@ ipcMain.handle("sftp:disconnect", async () => {
     await sftp.disconnect().catch(() => {});
     sftp = null;
   }
+  sftpConfig = null;
   return { success: true };
 });
 
@@ -338,8 +372,10 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
   const results = [];
   const MAX_RETRIES = 2;
   const totalCount = files.length + deletedFiles.length;
+  let uploadsStarted = 0;
 
   // ─── Delete remote files that were deleted locally ─────────────
+  // Deletions are sequential to avoid race conditions on directory cleanup
   for (const relPath of deletedFiles) {
     const remotePath = remoteBase + "/" + relPath.replace(/\\/g, "/");
 
@@ -366,7 +402,7 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
       }
     }
 
-    // Delete with retry
+    // Delete with retry — check connection before each retry attempt
     let deleted = false;
     let lastError = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -377,6 +413,9 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
       } catch (err) {
         lastError = err;
         if (attempt < MAX_RETRIES) {
+          // Verify connection before retrying; reconnect if necessary
+          const connected = await ensureConnected();
+          if (!connected) break;
           await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
@@ -397,8 +436,8 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
     }
   }
 
-  // ─── Upload files ──────────────────────────────────────────────
-  for (const file of files) {
+  // ─── Upload files (concurrent with connection check on failure) ─
+  const uploadTasks = files.map((file) => async () => {
     const relativePath = file.replace(localBase, "");
     const remotePath = remoteBase + relativePath.replace(/\\/g, "/");
 
@@ -406,7 +445,7 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
       mainWindow.webContents.send("sftp:upload-progress", {
         file: relativePath,
         status: "uploading",
-        current: results.length + 1,
+        current: results.length + (++uploadsStarted),
         total: totalCount,
       });
     }
@@ -425,7 +464,7 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
       }
     }
 
-    // Upload with retry
+    // Upload with retry — check connection before each retry attempt
     let uploaded = false;
     let lastError = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -436,26 +475,32 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
       } catch (err) {
         lastError = err;
         if (attempt < MAX_RETRIES) {
+          // Verify connection before retrying; reconnect if necessary
+          const connected = await ensureConnected();
+          if (!connected) break;
           await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
     }
 
-    if (uploaded) {
-      results.push({ file: relativePath, status: "success" });
-    } else {
-      results.push({ file: relativePath, status: "error", error: lastError?.message || "Upload failed" });
-    }
+    const result = uploaded
+      ? { file: relativePath, status: "success" }
+      : { file: relativePath, status: "error", error: lastError?.message || "Upload failed" };
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("sftp:upload-progress", {
         file: relativePath,
         status: uploaded ? "done" : "error",
-        current: results.length,
+        current: results.length + uploadsStarted,
         total: totalCount,
       });
     }
-  }
+
+    return result;
+  });
+
+  const uploadResults = await runWithConcurrency(uploadTasks, CONCURRENT_UPLOADS);
+  results.push(...uploadResults);
 
   const successCount = results.filter((r) => r.status === "success").length;
   const errorCount = results.filter((r) => r.status === "error").length;
