@@ -32,6 +32,7 @@ export default function FileList() {
   const clearChangedFiles = useStore((s) => s.clearChangedFiles);
   const getFilteredFiles = useStore((s) => s.getFilteredFiles);
   const addIgnorePattern = useStore((s) => s.addIgnorePattern);
+  const removeChangedFiles = useStore((s) => s.removeChangedFiles);
 
   const [diffFile, setDiffFile] = useState(null);
   const [ignoreMenu, setIgnoreMenu] = useState(null); // { relativePath, dir, x, y }
@@ -87,16 +88,29 @@ export default function FileList() {
                 {dir && <span className="dir">{dir}</span>}
                 {fileName}
               </span>
-              <button
-                className="file-diff-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDiffFile(file);
-                }}
-                title="Ver diferenças"
-              >
-                diff
-              </button>
+              {type === 'deleted' || type === 'unlink' ? (
+                <button
+                  className="file-dismiss-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeChangedFiles([file.relativePath]);
+                  }}
+                  title="Ignorar exclusão"
+                >
+                  ignorar
+                </button>
+              ) : (
+                <button
+                  className="file-diff-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDiffFile(file);
+                  }}
+                  title="Ver diferenças"
+                >
+                  diff
+                </button>
+              )}
               <button
                 className="file-ignore-btn"
                 onClick={(e) => {

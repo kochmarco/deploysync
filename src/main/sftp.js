@@ -54,6 +54,11 @@ class SftpManager {
     }
   }
 
+  async delete(remotePath) {
+    if (!this.connected) throw new Error("Not connected");
+    await this.client.delete(remotePath);
+  }
+
   async disconnect() {
     if (this.connected) {
       await this.client.end();

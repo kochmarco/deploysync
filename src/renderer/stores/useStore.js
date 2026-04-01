@@ -188,19 +188,28 @@ export const useStore = create((set, get) => ({
       if (!conn.success) return conn;
     }
 
-    const filesToUpload = changedFiles
-      .filter((f) => selectedFiles.has(f.relativePath))
+    const selected = changedFiles.filter((f) => selectedFiles.has(f.relativePath));
+    const fileType = (f) => f.type || f.eventType || 'modified';
+
+    // Separate normal files (upload) from deleted files (remote delete)
+    const filesToUpload = selected
+      .filter((f) => fileType(f) !== 'deleted' && fileType(f) !== 'unlink')
       .map((f) => {
         if (f.absolutePath) return f.absolutePath;
-        // Reconstruct from localPath + relativePath
         const base = project.localPath.replace(/\/$/, '');
         return base + '/' + f.relativePath;
       });
 
-    set({ deploying: true, deployProgress: { current: 0, total: filesToUpload.length } });
+    const deletedFiles = selected
+      .filter((f) => fileType(f) === 'deleted' || fileType(f) === 'unlink')
+      .map((f) => f.relativePath);
+
+    const totalFiles = filesToUpload.length + deletedFiles.length;
+    set({ deploying: true, deployProgress: { current: 0, total: totalFiles } });
 
     const result = await api.sftpUpload({
       files: filesToUpload,
+      deletedFiles,
       localBase: project.localPath,
       remoteBase: project.remotePath,
     });

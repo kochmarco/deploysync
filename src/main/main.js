@@ -324,7 +324,7 @@ ipcMain.handle("sftp:status", () => {
   return { connected: sftp?.connected || false };
 });
 
-ipcMain.handle("sftp:upload", async (_, { files, localBase, remoteBase, backup }) => {
+ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, remoteBase, backup }) => {
   if (!sftp || !sftp.connected) {
     return { success: false, error: "SFTP não conectado" };
   }
@@ -337,7 +337,67 @@ ipcMain.handle("sftp:upload", async (_, { files, localBase, remoteBase, backup }
 
   const results = [];
   const MAX_RETRIES = 2;
+  const totalCount = files.length + deletedFiles.length;
 
+  // ─── Delete remote files that were deleted locally ─────────────
+  for (const relPath of deletedFiles) {
+    const remotePath = remoteBase + "/" + relPath.replace(/\\/g, "/");
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("sftp:upload-progress", {
+        file: relPath,
+        status: "deleting",
+        current: results.length + 1,
+        total: totalCount,
+      });
+    }
+
+    // Backup remote file before deleting
+    if (backupEnabled) {
+      try {
+        const remoteExists = await sftp.exists(remotePath);
+        if (remoteExists) {
+          const backupFile = path.join(backupDir, relPath);
+          fs.mkdirSync(path.dirname(backupFile), { recursive: true });
+          await sftp.download(remotePath, backupFile);
+        }
+      } catch (_) {
+        // Backup failure shouldn't block delete
+      }
+    }
+
+    // Delete with retry
+    let deleted = false;
+    let lastError = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await sftp.delete(remotePath);
+        deleted = true;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        }
+      }
+    }
+
+    results.push(deleted
+      ? { file: relPath, status: "success", action: "deleted" }
+      : { file: relPath, status: "error", error: lastError?.message || "Delete failed" }
+    );
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("sftp:upload-progress", {
+        file: relPath,
+        status: deleted ? "done" : "error",
+        current: results.length,
+        total: totalCount,
+      });
+    }
+  }
+
+  // ─── Upload files ──────────────────────────────────────────────
   for (const file of files) {
     const relativePath = file.replace(localBase, "");
     const remotePath = remoteBase + relativePath.replace(/\\/g, "/");
@@ -347,7 +407,7 @@ ipcMain.handle("sftp:upload", async (_, { files, localBase, remoteBase, backup }
         file: relativePath,
         status: "uploading",
         current: results.length + 1,
-        total: files.length,
+        total: totalCount,
       });
     }
 
@@ -392,7 +452,7 @@ ipcMain.handle("sftp:upload", async (_, { files, localBase, remoteBase, backup }
         file: relativePath,
         status: uploaded ? "done" : "error",
         current: results.length,
-        total: files.length,
+        total: totalCount,
       });
     }
   }
@@ -405,7 +465,7 @@ ipcMain.handle("sftp:upload", async (_, { files, localBase, remoteBase, backup }
   history.unshift({
     timestamp: Date.now(),
     files: results,
-    totalFiles: files.length,
+    totalFiles: totalCount,
     successCount,
     errorCount,
     backupPath: backupEnabled ? backupDir : null,
@@ -418,7 +478,7 @@ ipcMain.handle("sftp:upload", async (_, { files, localBase, remoteBase, backup }
       title: "DeploySync — Deploy",
       body: errorCount > 0
         ? `${successCount} ok, ${errorCount} erro(s)`
-        : `${successCount} arquivo${successCount !== 1 ? "s" : ""} enviado${successCount !== 1 ? "s" : ""}`,
+        : `${successCount} arquivo${successCount !== 1 ? "s" : ""} sincronizado${successCount !== 1 ? "s" : ""}`,
       silent: false,
     });
     n.show();
