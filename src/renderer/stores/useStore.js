@@ -172,6 +172,7 @@ export const useStore = create((set, get) => ({
   // ─── SFTP / Deploy ───────────────────────────────────────
   sftpConnected: false,
   deploying: false,
+  deployCancelling: false,
   deployProgress: null,
 
   connectSftp: async () => {
@@ -230,21 +231,29 @@ export const useStore = create((set, get) => ({
       remoteBase: project.remotePath,
     });
 
-    set({ deploying: false, deployProgress: null });
+    set({ deploying: false, deployCancelling: false, deployProgress: null });
 
     if (result.disconnected) {
       set({ sftpConnected: false });
     }
 
-    if (result.success) {
-      const successPaths = result.results
+    if (result.success || result.cancelled) {
+      const successPaths = (result.results || [])
         .filter((r) => r.status === 'success')
         .map((r) => r.file.replace(/^\//, ''));
-      get().removeChangedFiles(successPaths);
-      await get().loadHistory();
+      if (successPaths.length > 0) {
+        get().removeChangedFiles(successPaths);
+        await get().loadHistory();
+      }
     }
 
     return result;
+  },
+
+  cancelDeploy: async () => {
+    if (!api) return;
+    set({ deployCancelling: true });
+    await api.sftpCancelDeploy();
   },
 
   // ─── Deploy History ───────────────────────────────────────

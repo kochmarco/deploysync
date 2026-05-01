@@ -5,8 +5,10 @@ import { showToast } from './Toast';
 export default function DeployBar() {
   const selectedFiles = useStore((s) => s.selectedFiles);
   const deploying = useStore((s) => s.deploying);
+  const deployCancelling = useStore((s) => s.deployCancelling);
   const deployProgress = useStore((s) => s.deployProgress);
   const deploy = useStore((s) => s.deploy);
+  const cancelDeploy = useStore((s) => s.cancelDeploy);
 
   const [error, setError] = useState(null);
   const count = selectedFiles.size;
@@ -15,10 +17,16 @@ export default function DeployBar() {
     setError(null);
     const result = await deploy();
     if (!result) return;
+    if (result.cancelled && !result.success) {
+      showToast('Deploy cancelado', 'info');
+      return;
+    }
     if (result.success) {
       const ok = result.results?.filter((r) => r.status === 'success').length || 0;
       const fail = result.results?.filter((r) => r.status === 'error').length || 0;
-      if (fail > 0) {
+      if (result.cancelled) {
+        showToast(`Deploy parcialmente cancelado — ${ok} arquivo${ok !== 1 ? 's' : ''} enviado${ok !== 1 ? 's' : ''}`, 'info');
+      } else if (fail > 0) {
         showToast(`Deploy parcial: ${ok} ok, ${fail} erro(s)`, 'error');
       } else {
         showToast(`Deploy concluído — ${ok} arquivo${ok !== 1 ? 's' : ''} enviado${ok !== 1 ? 's' : ''}`, 'success');
@@ -54,18 +62,28 @@ export default function DeployBar() {
             />
           </div>
           <div className="deploy-progress-text font-sans">
-            Enviando {deployProgress.current}/{deployProgress.total}...
+            {deployCancelling ? 'Cancelando...' : `Enviando ${deployProgress.current}/${deployProgress.total}...`}
           </div>
         </div>
       )}
 
-      <button
-        className="deploy-btn"
-        disabled={count === 0 || deploying}
-        onClick={handleDeploy}
-      >
-        {deploying ? 'Enviando...' : `Deploy ${count > 0 ? `(${count})` : ''}`}
-      </button>
+      {deploying ? (
+        <button
+          className="deploy-btn cancel"
+          disabled={deployCancelling}
+          onClick={cancelDeploy}
+        >
+          {deployCancelling ? 'Cancelando...' : 'Cancelar'}
+        </button>
+      ) : (
+        <button
+          className="deploy-btn"
+          disabled={count === 0}
+          onClick={handleDeploy}
+        >
+          {`Deploy ${count > 0 ? `(${count})` : ''}`}
+        </button>
+      )}
     </div>
   );
 }

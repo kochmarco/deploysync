@@ -940,6 +940,15 @@ body {
   cursor: not-allowed;
 }
 
+.deploy-btn.cancel {
+  background: linear-gradient(135deg, var(--red, #e05555), #b83c3c);
+  color: #fff;
+}
+
+.deploy-btn.cancel:not(:disabled):hover {
+  box-shadow: 0 4px 20px rgba(224, 85, 85, 0.3);
+}
+
 .deploy-progress {
   flex: 1;
   margin: 0 16px;
