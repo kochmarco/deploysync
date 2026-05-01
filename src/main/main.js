@@ -190,6 +190,33 @@ ipcMain.handle("project:delete", (_, id) => {
   return true;
 });
 
+function convertGitignoreToGlob(line) {
+  let p = line.trim();
+  if (!p || p.startsWith('#')) return null;
+  // Negation patterns are not supported as ignore patterns
+  if (p.startsWith('!')) return null;
+  // Remove leading slash — chokidar patterns are relative
+  if (p.startsWith('/')) p = p.slice(1);
+  // Trailing slash means directory — match everything inside
+  if (p.endsWith('/')) return p + '**';
+  // If no slash inside, match anywhere in tree
+  if (!p.includes('/')) return '**/' + p;
+  return p;
+}
+
+ipcMain.handle("project:import-gitignore", async (_, { localPath }) => {
+  const gitignorePath = path.join(localPath, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) {
+    return { success: false, error: '.gitignore não encontrado' };
+  }
+  const content = fs.readFileSync(gitignorePath, 'utf8');
+  const patterns = content
+    .split('\n')
+    .map(convertGitignoreToGlob)
+    .filter(Boolean);
+  return { success: true, patterns };
+});
+
 ipcMain.handle("watcher:start", () => { startWatcher(); return true; });
 ipcMain.handle("watcher:stop", () => { stopWatcher(); return true; });
 ipcMain.handle("watcher:status", () => watcher ? watcher.isRunning : false);
