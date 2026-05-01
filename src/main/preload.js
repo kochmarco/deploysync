@@ -12,16 +12,21 @@ contextBridge.exposeInMainWorld("api", {
   setActiveProject: (id) => ipcRenderer.invoke("project:setActive", id),
   saveProject: (project) => ipcRenderer.invoke("project:save", project),
   deleteProject: (id) => ipcRenderer.invoke("project:delete", id),
+  importGitignore: (localPath) => ipcRenderer.invoke("project:import-gitignore", { localPath }),
 
   // Watcher
   watcherStart: () => ipcRenderer.invoke("watcher:start"),
   watcherStop: () => ipcRenderer.invoke("watcher:stop"),
   watcherStatus: () => ipcRenderer.invoke("watcher:status"),
+  scanFiles: () => ipcRenderer.invoke("watcher:scan"),
+  scanRemoteFiles: () => ipcRenderer.invoke("watcher:scan-remote"),
 
   // SFTP
   sftpConnect: (config) => ipcRenderer.invoke("sftp:connect", config),
   sftpDisconnect: () => ipcRenderer.invoke("sftp:disconnect"),
   sftpStatus: () => ipcRenderer.invoke("sftp:status"),
+  sftpPing: () => ipcRenderer.invoke("sftp:ping"),
+  sftpCancelDeploy: () => ipcRenderer.invoke("sftp:cancel-deploy"),
   sftpUpload: (payload) => ipcRenderer.invoke("sftp:upload", payload),
 
   // MCP

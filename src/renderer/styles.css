@@ -886,6 +886,12 @@ body {
   color: var(--text-dim);
 }
 
+.file-list-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 /* ─── Deploy Bar ─────────────────────────────────────── */
 
 .deploy-bar {
@@ -938,6 +944,15 @@ body {
 .deploy-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.deploy-btn.cancel {
+  background: linear-gradient(135deg, var(--red, #e05555), #b83c3c);
+  color: #fff;
+}
+
+.deploy-btn.cancel:not(:disabled):hover {
+  box-shadow: 0 4px 20px rgba(224, 85, 85, 0.3);
 }
 
 .deploy-progress {

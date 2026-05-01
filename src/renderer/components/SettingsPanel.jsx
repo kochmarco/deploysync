@@ -302,12 +302,14 @@ export default function SettingsPanel() {
   const setShowSettings = useStore((s) => s.setShowSettings);
   const connectSftp = useStore((s) => s.connectSftp);
   const disconnectSftp = useStore((s) => s.disconnectSftp);
+  const importGitignore = useStore((s) => s.importGitignore);
 
   const mcpStatus = useStore((s) => s.mcpStatus);
   const loadMcpStatus = useStore((s) => s.loadMcpStatus);
 
   const [sftpError, setSftpError] = useState(null);
   const [connecting, setConnecting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [mcpPort, setMcpPort] = useState('3500');
 
   const [form, setForm] = useState({
@@ -387,6 +389,20 @@ export default function SettingsPanel() {
     if (!project?.id) return;
     await deleteProject(project.id);
     setShowSettings(false);
+  };
+
+  const handleImportGitignore = async () => {
+    const showToast = window.showToast || (() => {});
+    setImporting(true);
+    const result = await importGitignore();
+    setImporting(false);
+    if (!result.success) {
+      showToast(result.error || 'Erro ao importar .gitignore', 'error');
+    } else if (result.added === 0) {
+      showToast('Nenhum padrão novo encontrado no .gitignore', 'info');
+    } else {
+      showToast(`${result.added} padrão${result.added !== 1 ? 'ões' : ''} importado${result.added !== 1 ? 's' : ''} do .gitignore`, 'success');
+    }
   };
 
   return (
@@ -590,6 +606,14 @@ export default function SettingsPanel() {
                 placeholder={`**/node_modules/**\n**/vendor/**\n**/.git/**\n**/storage/logs/**`}
                 rows={12}
               />
+              <button
+                className="btn btn-ghost"
+                style={{ marginTop: 8 }}
+                onClick={handleImportGitignore}
+                disabled={importing || !project?.localPath}
+              >
+                {importing ? 'Importando...' : 'Importar do .gitignore'}
+              </button>
             </div>
           </div>
         </>

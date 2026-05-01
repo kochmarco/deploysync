@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require("el
 const path = require("path");
 const fs = require("fs");
 const { execSync } = require("child_process");
+const picomatch = require("picomatch");
 const { FileWatcher } = require("./watcher");
 const { ConfigStore } = require("./config");
 const { MCPServer } = require("./mcp-server");
@@ -12,6 +13,7 @@ let watcher;
 let mcpServer;
 let sftp = null;
 let sftpConfig = null;
+let deployCancelled = false;
 const config = new ConfigStore();
 
 const CONCURRENT_UPLOADS = 3;
@@ -190,9 +192,116 @@ ipcMain.handle("project:delete", (_, id) => {
   return true;
 });
 
+function convertGitignoreToGlob(line) {
+  let p = line.trim();
+  if (!p || p.startsWith('#')) return null;
+  // Negation patterns are not supported as ignore patterns
+  if (p.startsWith('!')) return null;
+  // Remove leading slash — chokidar patterns are relative
+  if (p.startsWith('/')) p = p.slice(1);
+  // Trailing slash means directory — match everything inside
+  if (p.endsWith('/')) return p + '**';
+  // If no slash inside, match anywhere in tree
+  if (!p.includes('/')) return '**/' + p;
+  return p;
+}
+
+ipcMain.handle("project:import-gitignore", async (_, { localPath }) => {
+  const gitignorePath = path.join(localPath, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) {
+    return { success: false, error: '.gitignore não encontrado' };
+  }
+  const content = fs.readFileSync(gitignorePath, 'utf8');
+  const patterns = content
+    .split('\n')
+    .map(convertGitignoreToGlob)
+    .filter(Boolean);
+  return { success: true, patterns };
+});
+
 ipcMain.handle("watcher:start", () => { startWatcher(); return true; });
 ipcMain.handle("watcher:stop", () => { stopWatcher(); return true; });
 ipcMain.handle("watcher:status", () => watcher ? watcher.isRunning : false);
+
+ipcMain.handle("watcher:scan", async () => {
+  const activeId = config.get("activeProject");
+  const project = (config.get("projects", [])).find((p) => p.id === activeId) || null;
+  if (!project?.localPath) return { success: false, error: "Nenhum projeto ativo" };
+
+  const ignorePatterns = project.ignorePatterns || [];
+  const isIgnored = ignorePatterns.length > 0
+    ? picomatch(ignorePatterns, { dot: true })
+    : () => false;
+
+  const files = [];
+
+  function walkDir(dir) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const absPath = path.join(dir, entry.name);
+      const relPath = path.relative(project.localPath, absPath).replace(/\\/g, "/");
+      if (isIgnored(relPath)) continue;
+      if (entry.isDirectory()) {
+        walkDir(absPath);
+      } else if (entry.isFile()) {
+        const stat = fs.statSync(absPath);
+        files.push({ relativePath: relPath, absolutePath: absPath, mtime: stat.mtimeMs, size: stat.size });
+      }
+    }
+  }
+
+  walkDir(project.localPath);
+  return { success: true, files };
+});
+
+ipcMain.handle("watcher:scan-remote", async () => {
+  const activeId = config.get("activeProject");
+  const project = (config.get("projects", [])).find((p) => p.id === activeId) || null;
+  if (!project?.localPath) return { success: false, error: "Nenhum projeto ativo" };
+  if (!sftp || !sftp.connected) return { success: false, error: "SFTP não conectado" };
+
+  const ignorePatterns = project.ignorePatterns || [];
+  const isIgnored = ignorePatterns.length > 0
+    ? picomatch(ignorePatterns, { dot: true })
+    : () => false;
+
+  const changed = [];
+
+  function walkDir(dir) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const absPath = path.join(dir, entry.name);
+      const relPath = path.relative(project.localPath, absPath).replace(/\\/g, "/");
+      if (isIgnored(relPath)) continue;
+      if (entry.isDirectory()) {
+        walkDir(absPath);
+      } else if (entry.isFile()) {
+        changed.push({ relativePath: relPath, absolutePath: absPath });
+      }
+    }
+  }
+
+  walkDir(project.localPath);
+
+  const results = [];
+  for (const file of changed) {
+    const remotePath = project.remotePath + "/" + file.relativePath;
+    try {
+      const remoteStat = await sftp.stat(remotePath);
+      const localStat = fs.statSync(file.absolutePath);
+      if (localStat.size !== remoteStat.size) {
+        results.push(file);
+      }
+    } catch {
+      // Remote file doesn't exist — local is new
+      results.push(file);
+    }
+  }
+
+  return { success: true, files: results };
+});
 
 ipcMain.handle("dialog:selectFolder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
@@ -358,10 +467,33 @@ ipcMain.handle("sftp:status", () => {
   return { connected: sftp?.connected || false };
 });
 
+ipcMain.handle("sftp:ping", async () => {
+  if (!sftp) return { connected: false, error: "SFTP não inicializado" };
+  const alive = await sftp.ping();
+  if (!alive) {
+    sftp = null;
+    return { connected: false, error: "Conexão SFTP perdida" };
+  }
+  return { connected: true };
+});
+
+ipcMain.handle("sftp:cancel-deploy", () => {
+  deployCancelled = true;
+  return { success: true };
+});
+
 ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, remoteBase, backup }) => {
   if (!sftp || !sftp.connected) {
-    return { success: false, error: "SFTP não conectado" };
+    return { success: false, error: "SFTP não conectado", disconnected: true };
   }
+
+  const alive = await sftp.ping();
+  if (!alive) {
+    sftp = null;
+    return { success: false, error: "Conexão SFTP perdida. Reconecte antes de fazer deploy.", disconnected: true };
+  }
+
+  deployCancelled = false;
 
   const backupEnabled = backup !== false;
   const backupDir = path.join(app.getPath("userData"), "backups", String(Date.now()));
@@ -377,6 +509,8 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
   // ─── Delete remote files that were deleted locally ─────────────
   // Deletions are sequential to avoid race conditions on directory cleanup
   for (const relPath of deletedFiles) {
+    if (deployCancelled) break;
+
     const remotePath = remoteBase + "/" + relPath.replace(/\\/g, "/");
 
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -438,6 +572,8 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
 
   // ─── Upload files (concurrent with connection check on failure) ─
   const uploadTasks = files.map((file) => async () => {
+    if (deployCancelled) return { file: file.replace(localBase, ""), status: "cancelled" };
+
     const relativePath = file.replace(localBase, "");
     const remotePath = remoteBase + relativePath.replace(/\\/g, "/");
 
@@ -504,6 +640,12 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
 
   const successCount = results.filter((r) => r.status === "success").length;
   const errorCount = results.filter((r) => r.status === "error").length;
+  const wasCancelled = deployCancelled;
+  deployCancelled = false;
+
+  if (wasCancelled && successCount === 0) {
+    return { success: false, cancelled: true, results };
+  }
 
   // Save to deploy history
   const history = config.get("deployHistory", []);
@@ -529,7 +671,7 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
     n.show();
   }
 
-  return { success: true, results };
+  return { success: true, cancelled: wasCancelled, results };
 });
 
 // ─── DIFF ────────────────────────────────────────────────────────

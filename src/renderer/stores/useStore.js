@@ -113,6 +113,22 @@ export const useStore = create((set, get) => ({
     try { await api.watcherStart(); } catch {}
   },
 
+  importGitignore: async () => {
+    const project = get().project;
+    if (!project || !api) return { success: false };
+    const result = await api.importGitignore(project.localPath);
+    if (!result.success) return result;
+    const existing = project.ignorePatterns || [];
+    const newPatterns = result.patterns.filter((p) => !existing.includes(p));
+    if (newPatterns.length === 0) return { success: true, added: 0 };
+    const updated = { ...project, ignorePatterns: [...existing, ...newPatterns] };
+    await api.saveProject(updated);
+    await get().loadProjects();
+    try { await api.watcherStop(); } catch {}
+    try { await api.watcherStart(); } catch {}
+    return { success: true, added: newPatterns.length };
+  },
+
   toggleFileSelection: (relativePath) => {
     set((state) => {
       const next = new Set(state.selectedFiles);
@@ -140,6 +156,7 @@ export const useStore = create((set, get) => ({
 
   // ─── Watcher ──────────────────────────────────────────────
   watcherActive: false,
+  scanning: false,
 
   startWatcher: async () => {
     if (!api) return;
@@ -153,9 +170,56 @@ export const useStore = create((set, get) => ({
     set({ watcherActive: false });
   },
 
+  scanFiles: async () => {
+    if (!api) return { success: false };
+    set({ scanning: true });
+    const result = await api.scanFiles();
+    set({ scanning: false });
+    if (!result.success) return result;
+    const { changedFiles, project } = get();
+    const existingPaths = new Set(changedFiles.map((f) => f.relativePath));
+    const newFiles = result.files
+      .filter((f) => !existingPaths.has(f.relativePath))
+      .map((f) => ({
+        relativePath: f.relativePath,
+        absolutePath: f.absolutePath,
+        eventType: 'modified',
+        source: 'scan',
+        timestamp: Date.now(),
+      }));
+    if (newFiles.length > 0) {
+      set((state) => ({ changedFiles: [...state.changedFiles, ...newFiles] }));
+    }
+    return { success: true, added: newFiles.length };
+  },
+
+  scanRemoteFiles: async () => {
+    if (!api) return { success: false };
+    set({ scanning: true });
+    const result = await api.scanRemoteFiles();
+    set({ scanning: false });
+    if (!result.success) return result;
+    const { changedFiles } = get();
+    const existingPaths = new Set(changedFiles.map((f) => f.relativePath));
+    const newFiles = result.files
+      .filter((f) => !existingPaths.has(f.relativePath))
+      .map((f) => ({
+        relativePath: f.relativePath,
+        absolutePath: f.absolutePath,
+        eventType: 'modified',
+        source: 'scan-remote',
+        timestamp: Date.now(),
+      }));
+    if (newFiles.length > 0) {
+      set((state) => ({ changedFiles: [...state.changedFiles, ...newFiles] }));
+    }
+    return { success: true, added: newFiles.length };
+  },
+
   // ─── SFTP / Deploy ───────────────────────────────────────
   sftpConnected: false,
   deploying: false,
+  deployCancelling: false,
   deployProgress: null,
 
   connectSftp: async () => {
@@ -214,17 +278,29 @@ export const useStore = create((set, get) => ({
       remoteBase: project.remotePath,
     });
 
-    set({ deploying: false, deployProgress: null });
+    set({ deploying: false, deployCancelling: false, deployProgress: null });
 
-    if (result.success) {
-      const successPaths = result.results
+    if (result.disconnected) {
+      set({ sftpConnected: false });
+    }
+
+    if (result.success || result.cancelled) {
+      const successPaths = (result.results || [])
         .filter((r) => r.status === 'success')
         .map((r) => r.file.replace(/^\//, ''));
-      get().removeChangedFiles(successPaths);
-      await get().loadHistory();
+      if (successPaths.length > 0) {
+        get().removeChangedFiles(successPaths);
+        await get().loadHistory();
+      }
     }
 
     return result;
+  },
+
+  cancelDeploy: async () => {
+    if (!api) return;
+    set({ deployCancelling: true });
+    await api.sftpCancelDeploy();
   },
 
   // ─── Deploy History ───────────────────────────────────────
