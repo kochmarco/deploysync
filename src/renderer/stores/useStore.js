@@ -156,6 +156,7 @@ export const useStore = create((set, get) => ({
 
   // ─── Watcher ──────────────────────────────────────────────
   watcherActive: false,
+  scanning: false,
 
   startWatcher: async () => {
     if (!api) return;
@@ -167,6 +168,52 @@ export const useStore = create((set, get) => ({
     if (!api) return;
     await api.watcherStop();
     set({ watcherActive: false });
+  },
+
+  scanFiles: async () => {
+    if (!api) return { success: false };
+    set({ scanning: true });
+    const result = await api.scanFiles();
+    set({ scanning: false });
+    if (!result.success) return result;
+    const { changedFiles, project } = get();
+    const existingPaths = new Set(changedFiles.map((f) => f.relativePath));
+    const newFiles = result.files
+      .filter((f) => !existingPaths.has(f.relativePath))
+      .map((f) => ({
+        relativePath: f.relativePath,
+        absolutePath: f.absolutePath,
+        eventType: 'modified',
+        source: 'scan',
+        timestamp: Date.now(),
+      }));
+    if (newFiles.length > 0) {
+      set((state) => ({ changedFiles: [...state.changedFiles, ...newFiles] }));
+    }
+    return { success: true, added: newFiles.length };
+  },
+
+  scanRemoteFiles: async () => {
+    if (!api) return { success: false };
+    set({ scanning: true });
+    const result = await api.scanRemoteFiles();
+    set({ scanning: false });
+    if (!result.success) return result;
+    const { changedFiles } = get();
+    const existingPaths = new Set(changedFiles.map((f) => f.relativePath));
+    const newFiles = result.files
+      .filter((f) => !existingPaths.has(f.relativePath))
+      .map((f) => ({
+        relativePath: f.relativePath,
+        absolutePath: f.absolutePath,
+        eventType: 'modified',
+        source: 'scan-remote',
+        timestamp: Date.now(),
+      }));
+    if (newFiles.length > 0) {
+      set((state) => ({ changedFiles: [...state.changedFiles, ...newFiles] }));
+    }
+    return { success: true, added: newFiles.length };
   },
 
   // ─── SFTP / Deploy ───────────────────────────────────────

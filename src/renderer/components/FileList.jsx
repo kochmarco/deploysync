@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../stores/useStore';
+import { showToast } from './Toast';
 import DiffViewer from './DiffViewer';
 
 const STATUS_LABELS = { modified: 'M', created: '+', deleted: '−' };
@@ -33,12 +34,38 @@ export default function FileList() {
   const getFilteredFiles = useStore((s) => s.getFilteredFiles);
   const addIgnorePattern = useStore((s) => s.addIgnorePattern);
   const removeChangedFiles = useStore((s) => s.removeChangedFiles);
+  const scanning = useStore((s) => s.scanning);
+  const scanFiles = useStore((s) => s.scanFiles);
+  const scanRemoteFiles = useStore((s) => s.scanRemoteFiles);
+  const sftpConnected = useStore((s) => s.sftpConnected);
 
   const [diffFile, setDiffFile] = useState(null);
-  const [ignoreMenu, setIgnoreMenu] = useState(null); // { relativePath, dir, x, y }
+  const [ignoreMenu, setIgnoreMenu] = useState(null);
 
   const filteredFiles = getFilteredFiles();
   const allSelected = filteredFiles.length > 0 && selectedFiles.size === filteredFiles.length;
+
+  const handleScanLocal = async () => {
+    const result = await scanFiles();
+    if (!result.success) {
+      showToast(result.error || 'Erro ao escanear arquivos', 'error');
+    } else if (result.added === 0) {
+      showToast('Nenhum arquivo novo encontrado', 'info');
+    } else {
+      showToast(`${result.added} arquivo${result.added !== 1 ? 's' : ''} adicionado${result.added !== 1 ? 's' : ''}`, 'success');
+    }
+  };
+
+  const handleScanRemote = async () => {
+    const result = await scanRemoteFiles();
+    if (!result.success) {
+      showToast(result.error || 'Erro ao comparar com servidor', 'error');
+    } else if (result.added === 0) {
+      showToast('Nenhuma diferença encontrada com o servidor', 'info');
+    } else {
+      showToast(`${result.added} arquivo${result.added !== 1 ? 's' : ''} diferente${result.added !== 1 ? 's' : ''} encontrado${result.added !== 1 ? 's' : ''}`, 'success');
+    }
+  };
 
   if (changedFiles.length === 0) {
     return (
@@ -47,6 +74,26 @@ export default function FileList() {
         <div className="file-list-empty-text font-sans">Nenhuma alteração detectada</div>
         <div className="file-list-empty-sub">
           Edite arquivos no seu projeto e eles aparecerão aqui
+        </div>
+        <div className="file-list-empty-actions">
+          <button
+            className="btn btn-ghost"
+            onClick={handleScanLocal}
+            disabled={scanning}
+            title="Verificar arquivos alterados localmente"
+          >
+            {scanning ? '...' : '↻'} Verificar alterações
+          </button>
+          {sftpConnected && (
+            <button
+              className="btn btn-ghost"
+              onClick={handleScanRemote}
+              disabled={scanning}
+              title="Comparar com servidor SFTP"
+            >
+              {scanning ? '...' : '⇅'} Comparar com servidor
+            </button>
+          )}
         </div>
       </div>
     );
@@ -62,6 +109,22 @@ export default function FileList() {
           )}
         </span>
         <div className="file-list-actions">
+          <button
+            onClick={handleScanLocal}
+            disabled={scanning}
+            title="Verificar arquivos alterados localmente"
+          >
+            {scanning ? '...' : '↻'}
+          </button>
+          {sftpConnected && (
+            <button
+              onClick={handleScanRemote}
+              disabled={scanning}
+              title="Comparar com servidor SFTP"
+            >
+              {scanning ? '...' : '⇅'}
+            </button>
+          )}
           <button onClick={selectAllFiles}>
             {allSelected ? 'Desmarcar' : 'Selecionar'} todos
           </button>

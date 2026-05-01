@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld("api", {
   watcherStart: () => ipcRenderer.invoke("watcher:start"),
   watcherStop: () => ipcRenderer.invoke("watcher:stop"),
   watcherStatus: () => ipcRenderer.invoke("watcher:status"),
+  scanFiles: () => ipcRenderer.invoke("watcher:scan"),
+  scanRemoteFiles: () => ipcRenderer.invoke("watcher:scan-remote"),
 
   // SFTP
   sftpConnect: (config) => ipcRenderer.invoke("sftp:connect", config),

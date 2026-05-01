@@ -886,6 +886,12 @@ body {
   color: var(--text-dim);
 }
 
+.file-list-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 /* ─── Deploy Bar ─────────────────────────────────────── */
 
 .deploy-bar {
