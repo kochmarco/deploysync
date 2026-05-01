@@ -224,10 +224,8 @@ ipcMain.handle("watcher:stop", () => { stopWatcher(); return true; });
 ipcMain.handle("watcher:status", () => watcher ? watcher.isRunning : false);
 
 ipcMain.handle("watcher:scan", async () => {
-  const project = config.getActiveProject ? config.getActiveProject() : (() => {
-    const id = config.get("activeProject");
-    return (config.get("projects", [])).find((p) => p.id === id) || null;
-  })();
+  const activeId = config.get("activeProject");
+  const project = (config.get("projects", [])).find((p) => p.id === activeId) || null;
   if (!project?.localPath) return { success: false, error: "Nenhum projeto ativo" };
 
   const ignorePatterns = project.ignorePatterns || [];
@@ -258,10 +256,8 @@ ipcMain.handle("watcher:scan", async () => {
 });
 
 ipcMain.handle("watcher:scan-remote", async () => {
-  const project = config.getActiveProject ? config.getActiveProject() : (() => {
-    const id = config.get("activeProject");
-    return (config.get("projects", [])).find((p) => p.id === id) || null;
-  })();
+  const activeId = config.get("activeProject");
+  const project = (config.get("projects", [])).find((p) => p.id === activeId) || null;
   if (!project?.localPath) return { success: false, error: "Nenhum projeto ativo" };
   if (!sftp || !sftp.connected) return { success: false, error: "SFTP não conectado" };
 
