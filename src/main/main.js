@@ -358,9 +358,25 @@ ipcMain.handle("sftp:status", () => {
   return { connected: sftp?.connected || false };
 });
 
+ipcMain.handle("sftp:ping", async () => {
+  if (!sftp) return { connected: false, error: "SFTP não inicializado" };
+  const alive = await sftp.ping();
+  if (!alive) {
+    sftp = null;
+    return { connected: false, error: "Conexão SFTP perdida" };
+  }
+  return { connected: true };
+});
+
 ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, remoteBase, backup }) => {
   if (!sftp || !sftp.connected) {
-    return { success: false, error: "SFTP não conectado" };
+    return { success: false, error: "SFTP não conectado", disconnected: true };
+  }
+
+  const alive = await sftp.ping();
+  if (!alive) {
+    sftp = null;
+    return { success: false, error: "Conexão SFTP perdida. Reconecte antes de fazer deploy.", disconnected: true };
   }
 
   const backupEnabled = backup !== false;
