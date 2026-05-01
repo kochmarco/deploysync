@@ -216,6 +216,10 @@ export const useStore = create((set, get) => ({
 
     set({ deploying: false, deployProgress: null });
 
+    if (result.disconnected) {
+      set({ sftpConnected: false });
+    }
+
     if (result.success) {
       const successPaths = result.results
         .filter((r) => r.status === 'success')

@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("api", {
   sftpConnect: (config) => ipcRenderer.invoke("sftp:connect", config),
   sftpDisconnect: () => ipcRenderer.invoke("sftp:disconnect"),
   sftpStatus: () => ipcRenderer.invoke("sftp:status"),
+  sftpPing: () => ipcRenderer.invoke("sftp:ping"),
   sftpUpload: (payload) => ipcRenderer.invoke("sftp:upload", payload),
 
   // MCP
