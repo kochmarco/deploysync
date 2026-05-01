@@ -12,6 +12,7 @@ let watcher;
 let mcpServer;
 let sftp = null;
 let sftpConfig = null;
+let deployCancelled = false;
 const config = new ConfigStore();
 
 const CONCURRENT_UPLOADS = 3;
@@ -395,6 +396,11 @@ ipcMain.handle("sftp:ping", async () => {
   return { connected: true };
 });
 
+ipcMain.handle("sftp:cancel-deploy", () => {
+  deployCancelled = true;
+  return { success: true };
+});
+
 ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, remoteBase, backup }) => {
   if (!sftp || !sftp.connected) {
     return { success: false, error: "SFTP não conectado", disconnected: true };
@@ -405,6 +411,8 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
     sftp = null;
     return { success: false, error: "Conexão SFTP perdida. Reconecte antes de fazer deploy.", disconnected: true };
   }
+
+  deployCancelled = false;
 
   const backupEnabled = backup !== false;
   const backupDir = path.join(app.getPath("userData"), "backups", String(Date.now()));
@@ -420,6 +428,8 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
   // ─── Delete remote files that were deleted locally ─────────────
   // Deletions are sequential to avoid race conditions on directory cleanup
   for (const relPath of deletedFiles) {
+    if (deployCancelled) break;
+
     const remotePath = remoteBase + "/" + relPath.replace(/\\/g, "/");
 
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -481,6 +491,8 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
 
   // ─── Upload files (concurrent with connection check on failure) ─
   const uploadTasks = files.map((file) => async () => {
+    if (deployCancelled) return { file: file.replace(localBase, ""), status: "cancelled" };
+
     const relativePath = file.replace(localBase, "");
     const remotePath = remoteBase + relativePath.replace(/\\/g, "/");
 
@@ -547,6 +559,12 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
 
   const successCount = results.filter((r) => r.status === "success").length;
   const errorCount = results.filter((r) => r.status === "error").length;
+  const wasCancelled = deployCancelled;
+  deployCancelled = false;
+
+  if (wasCancelled && successCount === 0) {
+    return { success: false, cancelled: true, results };
+  }
 
   // Save to deploy history
   const history = config.get("deployHistory", []);
@@ -572,7 +590,7 @@ ipcMain.handle("sftp:upload", async (_, { files, deletedFiles = [], localBase, r
     n.show();
   }
 
-  return { success: true, results };
+  return { success: true, cancelled: wasCancelled, results };
 });
 
 // ─── DIFF ────────────────────────────────────────────────────────
