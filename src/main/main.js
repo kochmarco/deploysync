@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require("el
 const path = require("path");
 const fs = require("fs");
 const { execSync } = require("child_process");
+const picomatch = require("picomatch");
 const { FileWatcher } = require("./watcher");
 const { ConfigStore } = require("./config");
 const { MCPServer } = require("./mcp-server");
@@ -221,6 +222,40 @@ ipcMain.handle("project:import-gitignore", async (_, { localPath }) => {
 ipcMain.handle("watcher:start", () => { startWatcher(); return true; });
 ipcMain.handle("watcher:stop", () => { stopWatcher(); return true; });
 ipcMain.handle("watcher:status", () => watcher ? watcher.isRunning : false);
+
+ipcMain.handle("watcher:scan", async () => {
+  const project = config.getActiveProject ? config.getActiveProject() : (() => {
+    const id = config.get("activeProject");
+    return (config.get("projects", [])).find((p) => p.id === id) || null;
+  })();
+  if (!project?.localPath) return { success: false, error: "Nenhum projeto ativo" };
+
+  const ignorePatterns = project.ignorePatterns || [];
+  const isIgnored = ignorePatterns.length > 0
+    ? picomatch(ignorePatterns, { dot: true })
+    : () => false;
+
+  const files = [];
+
+  function walkDir(dir) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const absPath = path.join(dir, entry.name);
+      const relPath = path.relative(project.localPath, absPath).replace(/\\/g, "/");
+      if (isIgnored(relPath)) continue;
+      if (entry.isDirectory()) {
+        walkDir(absPath);
+      } else if (entry.isFile()) {
+        const stat = fs.statSync(absPath);
+        files.push({ relativePath: relPath, absolutePath: absPath, mtime: stat.mtimeMs, size: stat.size });
+      }
+    }
+  }
+
+  walkDir(project.localPath);
+  return { success: true, files };
+});
 
 ipcMain.handle("dialog:selectFolder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
