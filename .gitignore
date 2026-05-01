@@ -9,3 +9,5 @@ src/renderer/dist/
 LARAVELSYNC-CONTEXT.md
 CLAUDE.md
 docs/
+docs/specs/
+.worktrees/
