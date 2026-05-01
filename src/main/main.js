@@ -257,6 +257,56 @@ ipcMain.handle("watcher:scan", async () => {
   return { success: true, files };
 });
 
+ipcMain.handle("watcher:scan-remote", async () => {
+  const project = config.getActiveProject ? config.getActiveProject() : (() => {
+    const id = config.get("activeProject");
+    return (config.get("projects", [])).find((p) => p.id === id) || null;
+  })();
+  if (!project?.localPath) return { success: false, error: "Nenhum projeto ativo" };
+  if (!sftp || !sftp.connected) return { success: false, error: "SFTP não conectado" };
+
+  const ignorePatterns = project.ignorePatterns || [];
+  const isIgnored = ignorePatterns.length > 0
+    ? picomatch(ignorePatterns, { dot: true })
+    : () => false;
+
+  const changed = [];
+
+  function walkDir(dir) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const absPath = path.join(dir, entry.name);
+      const relPath = path.relative(project.localPath, absPath).replace(/\\/g, "/");
+      if (isIgnored(relPath)) continue;
+      if (entry.isDirectory()) {
+        walkDir(absPath);
+      } else if (entry.isFile()) {
+        changed.push({ relativePath: relPath, absolutePath: absPath });
+      }
+    }
+  }
+
+  walkDir(project.localPath);
+
+  const results = [];
+  for (const file of changed) {
+    const remotePath = project.remotePath + "/" + file.relativePath;
+    try {
+      const remoteStat = await sftp.stat(remotePath);
+      const localStat = fs.statSync(file.absolutePath);
+      if (localStat.size !== remoteStat.size) {
+        results.push(file);
+      }
+    } catch {
+      // Remote file doesn't exist — local is new
+      results.push(file);
+    }
+  }
+
+  return { success: true, files: results };
+});
+
 ipcMain.handle("dialog:selectFolder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
   return result.canceled ? null : result.filePaths[0];
