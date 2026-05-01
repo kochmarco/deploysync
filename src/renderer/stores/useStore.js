@@ -113,6 +113,22 @@ export const useStore = create((set, get) => ({
     try { await api.watcherStart(); } catch {}
   },
 
+  importGitignore: async () => {
+    const project = get().project;
+    if (!project || !api) return { success: false };
+    const result = await api.importGitignore(project.localPath);
+    if (!result.success) return result;
+    const existing = project.ignorePatterns || [];
+    const newPatterns = result.patterns.filter((p) => !existing.includes(p));
+    if (newPatterns.length === 0) return { success: true, added: 0 };
+    const updated = { ...project, ignorePatterns: [...existing, ...newPatterns] };
+    await api.saveProject(updated);
+    await get().loadProjects();
+    try { await api.watcherStop(); } catch {}
+    try { await api.watcherStart(); } catch {}
+    return { success: true, added: newPatterns.length };
+  },
+
   toggleFileSelection: (relativePath) => {
     set((state) => {
       const next = new Set(state.selectedFiles);

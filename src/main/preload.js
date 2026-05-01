@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("api", {
   setActiveProject: (id) => ipcRenderer.invoke("project:setActive", id),
   saveProject: (project) => ipcRenderer.invoke("project:save", project),
   deleteProject: (id) => ipcRenderer.invoke("project:delete", id),
+  importGitignore: (localPath) => ipcRenderer.invoke("project:import-gitignore", { localPath }),
 
   // Watcher
   watcherStart: () => ipcRenderer.invoke("watcher:start"),
